@@ -45,36 +45,38 @@ app.get('/scrape', async (req, res) => {
 
     await page.waitForTimeout(3000);
 
-    // Fill in PIN
     await page.type('#pinBox1', segments.seg1);
     await page.type('#pinBox2', segments.seg2);
     await page.type('#pinBox3', segments.seg3);
     await page.type('#pinBox4', segments.seg4);
     await page.type('#pinBox5', segments.seg5);
 
-    // Submit
     await page.click('#ContentPlaceHolder1_PINAddressSearch_btnSearch');
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
 
-    // Extract the data
     const data = await page.evaluate(() => {
       const bodyText = document.body.innerText;
       
-      // Extract mailing address (taxpayer name)
       const mailingMatch = bodyText.match(/MAILING ADDRESS\s+([^\n]+)/);
       const taxpayerName = mailingMatch ? mailingMatch[1].trim() : 'Not found';
       
-      // Extract 2024 tax info
+      const mailingAddressMatch = bodyText.match(/MAILING ADDRESS\s+([^\n]+)\s+([^\n]+)\s+([^\n]+)/);
+      let mailingAddress = 'Not found';
+      if (mailingAddressMatch) {
+        const line1 = mailingAddressMatch[1].trim();
+        const line2 = mailingAddressMatch[2].trim();
+        const line3 = mailingAddressMatch[3].trim();
+        mailingAddress = `${line1}, ${line2}, ${line3}`;
+      }
+      
       const tax2024Match = bodyText.match(/2024:\s*\$?([\d,]+\.?\d*)\s*\n\s*Pay Online:\s*\$?([\d,]+\.?\d*)/);
-      const taxBilled = tax2024Match ? tax2024Match[1] : 'Not found';
       const amountOwed = tax2024Match ? tax2024Match[2] : 'Not found';
       
-      // Check if paid in full
       const paidInFull = bodyText.includes('2024:') && bodyText.match(/2024:[^\n]*Paid in Full/);
       
       return {
         taxpayerName,
-        taxBilled,
+        mailingAddress,
         amountOwed,
         status: paidInFull ? 'Paid in Full' : (amountOwed !== '0' ? 'Unpaid' : 'Unknown')
       };
@@ -86,7 +88,7 @@ app.get('/scrape', async (req, res) => {
       success: true,
       pin: pin,
       taxpayer: data.taxpayerName,
-      taxBilled2024: data.taxBilled,
+      mailingAddress: data.mailingAddress,
       amountOwed: data.amountOwed,
       status: data.status
     });
