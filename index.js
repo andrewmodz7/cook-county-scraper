@@ -17,7 +17,6 @@ app.get('/scrape', async (req, res) => {
 
   let browser;
   try {
-    // Split PIN into segments: 16-02-324-011-0000
     const segments = {
       seg1: pin.substring(0, 2),
       seg2: pin.substring(2, 4),
@@ -26,7 +25,6 @@ app.get('/scrape', async (req, res) => {
       seg5: pin.substring(10, 14)
     };
 
-    // Launch headless browser
     browser = await puppeteer.launch({
       headless: 'new',
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
@@ -40,84 +38,80 @@ app.get('/scrape', async (req, res) => {
 
     const page = await browser.newPage();
     
-    // Go to Cook County site
     await page.goto('https://www.cookcountypropertyinfo.com/', {
       waitUntil: 'networkidle2',
       timeout: 60000
     });
 
-    // Wait a bit for any JavaScript to load
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(2000);
 
-    // Try to find input fields with different selectors
-    const inputSelectors = [
-      'input[name*="pin"]',
-      'input[id*="pin"]',
-      'input[id*="Pin"]',
-      'input[type="text"]'
-    ];
-
-    // Get all input fields on the page
     const inputs = await page.$$('input[type="text"]');
     console.log(`Found ${inputs.length} text input fields`);
 
-    // If we have at least 5 inputs, assume they're the PIN boxes
     if (inputs.length >= 5) {
+      // Fill in PIN
       await inputs[0].type(segments.seg1);
       await inputs[1].type(segments.seg2);
       await inputs[2].type(segments.seg3);
       await inputs[3].type(segments.seg4);
       await inputs[4].type(segments.seg5);
 
-      // Find and click search button
-      const buttons = await page.$$('button, input[type="submit"], input[type="button"]');
+      // Click search button and wait for either navigation OR results to load
+      const buttons = await page.$$('button, input[type="submit"], input[type="button"], a');
       
-      // Try to find the search/submit button
+      let clicked = false;
       for (const button of buttons) {
-        const text = await page.evaluate(el => el.textContent || el.value, button);
-        if (text && (text.includes('Search') || text.includes('Submit') || text.includes('Find'))) {
+        const text = await page.evaluate(el => (el.textContent || el.value || '').toLowerCase(), button);
+        if (text.includes('search') || text.includes('submit') || text.includes('find') || text.includes('go')) {
+          console.log(`Clicking button with text: ${text}`);
           await button.click();
+          clicked = true;
           break;
         }
       }
 
-      // Wait for navigation
-      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
+      if (!clicked) {
+        await browser.close();
+        return res.json({
+          success: false,
+          error: "Could not find search button"
+        });
+      }
 
-      // Get the full page HTML to help us find the data
-      const html = await page.content();
+      // Wait for results to load (either navigation OR dynamic content)
+      // Try both approaches
+      try {
+        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 });
+        console.log("Page navigated to results");
+      } catch (navError) {
+        console.log("No navigation detected, checking for dynamic content");
+        // Wait a bit for AJAX to complete
+        await page.waitForTimeout(5000);
+      }
 
-      // Try to extract taxpayer info
-      const data = await page.evaluate(() => {
-        // Try multiple possible selectors
-        const getTextBySelectors = (selectors) => {
-          for (const selector of selectors) {
-            const el = document.querySelector(selector);
-            if (el) return el.textContent.trim();
-          }
-          return null;
-        };
-
-        return {
-          pageTitle: document.title,
-          bodyText: document.body.innerText.substring(0, 500) // First 500 chars
-        };
-      });
+      // Get the page URL and content
+      const currentUrl = page.url();
+      const pageTitle = await page.title();
+      
+      // Get page content to find taxpayer info
+      const bodyText = await page.evaluate(() => document.body.innerText);
 
       await browser.close();
 
       res.json({
         success: true,
         pin: pin,
-        data: data,
-        note: "Successfully navigated. Check 'bodyText' to find taxpayer info."
+        url: currentUrl,
+        pageTitle: pageTitle,
+        bodyText: bodyText.substring(0, 1000), // First 1000 chars to see what's on the page
+        note: "Check bodyText for taxpayer name and tax info"
       });
 
     } else {
       await browser.close();
       res.json({
         success: false,
-        error: `Only found ${inputs.length} input fields. Expected at least 5 for PIN entry.`
+        error: `Only found ${inputs.length} input fields`
       });
     }
 
@@ -126,7 +120,8 @@ app.get('/scrape', async (req, res) => {
     console.error('Scraping error:', error);
     res.status(500).json({ 
       success: false,
-      error: error.message 
+      error: error.message,
+      stack: error.stack
     });
   }
 });
