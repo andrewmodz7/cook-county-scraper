@@ -63,10 +63,9 @@ app.get('/scrape', async (req, res) => {
       const mailingAddressMatch = bodyText.match(/MAILING ADDRESS\s+([^\n]+)\s+([^\n]+)\s+([^\n]+)/);
       let mailingAddress = 'Not found';
       if (mailingAddressMatch) {
-        const line1 = mailingAddressMatch[1].trim();
-        const line2 = mailingAddressMatch[2].trim();
-        const line3 = mailingAddressMatch[3].trim();
-        mailingAddress = `${line1}, ${line2}, ${line3}`;
+        const line2 = mailingAddressMatch[2].trim(); // Street
+        const line3 = mailingAddressMatch[3].trim(); // City, State, ZIP
+        mailingAddress = `${line2}, ${line3}`;
       }
       
       const tax2024Match = bodyText.match(/2024:\s*\$?([\d,]+\.?\d*)\s*\n\s*Pay Online:\s*\$?([\d,]+\.?\d*)/);
