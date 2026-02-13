@@ -10,7 +10,7 @@ app.get('/', (req, res) => {
 
 app.get('/scrape', async (req, res) => {
   const pin = req.query.pin;
-
+  
   if (!pin || pin.length !== 14) {
     return res.status(400).json({ error: 'Invalid PIN. Must be 14 digits.' });
   }
@@ -27,12 +27,18 @@ app.get('/scrape', async (req, res) => {
 
     // Launch headless browser
     const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      headless: 'new',
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu'
+      ]
     });
 
     const page = await browser.newPage();
-
+    
     // Go to Cook County site
     await page.goto('https://www.cookcountypropertyinfo.com/', {
       waitUntil: 'networkidle0'
@@ -56,7 +62,7 @@ app.get('/scrape', async (req, res) => {
       const taxpayerElement = document.querySelector('.taxpayer-name');
       const statusElement = document.querySelector('.tax-status');
       const amountElement = document.querySelector('.amount-owed');
-
+      
       return {
         taxpayer: taxpayerElement ? taxpayerElement.textContent.trim() : 'Not found',
         status: statusElement ? statusElement.textContent.trim() : 'Not found',
