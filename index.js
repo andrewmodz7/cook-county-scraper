@@ -43,71 +43,50 @@ app.get('/scrape', async (req, res) => {
       timeout: 60000
     });
 
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
 
-    // Fill in the PIN using page.evaluate
-    await page.evaluate((segs) => {
-      const inputs = document.querySelectorAll('input[type="text"]');
-      if (inputs.length >= 5) {
-        inputs[0].value = segs.seg1;
-        inputs[1].value = segs.seg2;
-        inputs[2].value = segs.seg3;
-        inputs[3].value = segs.seg4;
-        inputs[4].value = segs.seg5;
-      }
-    }, segments);
+    // Fill in the PIN boxes with the correct IDs
+    await page.type('#pinBox1', segments.seg1);
+    await page.type('#pinBox2', segments.seg2);
+    await page.type('#pinBox3', segments.seg3);
+    await page.type('#pinBox4', segments.seg4);
+    await page.type('#pinBox5', segments.seg5);
 
-    console.log('Filled in PIN fields');
+    console.log('Filled PIN fields');
 
-    // Click the search button using JavaScript
-    const buttonClicked = await page.evaluate(() => {
-      const buttons = document.querySelectorAll('button, input[type="submit"], input[type="button"], a');
+    // Click the search button
+    await page.click('#ContentPlaceHolder1_PINAddressSearch_btnSearch');
+    
+    console.log('Clicked search button');
+
+    // Wait for navigation to results page
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
+
+    console.log('Navigated to results');
+
+    // Extract data from results page
+    const data = await page.evaluate(() => {
+      // Get all the text content
+      const bodyText = document.body.innerText;
       
-      for (const button of buttons) {
-        const text = (button.textContent || button.value || '').toLowerCase();
-        if (text.includes('search') || text.includes('submit') || text.includes('find')) {
-          console.log('Found button:', text);
-          button.click();
-          return true;
-        }
-      }
-      return false;
+      // We'll return the full body text to see what's on the page
+      // Then we can identify the correct selectors for taxpayer name, etc.
+      return {
+        url: window.location.href,
+        title: document.title,
+        bodyText: bodyText
+      };
     });
-
-    if (!buttonClicked) {
-      await browser.close();
-      return res.json({
-        success: false,
-        error: "Could not find or click search button"
-      });
-    }
-
-    console.log('Button clicked');
-
-    // Wait for results (either navigation or dynamic content)
-    try {
-      await Promise.race([
-        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }),
-        page.waitForTimeout(8000)
-      ]);
-    } catch (e) {
-      console.log('Navigation/wait completed');
-    }
-
-    // Get current state
-    const currentUrl = page.url();
-    const pageTitle = await page.title();
-    const bodyText = await page.evaluate(() => document.body.innerText);
 
     await browser.close();
 
     res.json({
       success: true,
       pin: pin,
-      url: currentUrl,
-      pageTitle: pageTitle,
-      bodyText: bodyText.substring(0, 2000),
-      note: "Check bodyText for taxpayer info. If URL changed, we navigated successfully."
+      url: data.url,
+      pageTitle: data.title,
+      bodyText: data.bodyText.substring(0, 3000), // First 3000 chars
+      note: "Successfully retrieved results. Check bodyText for taxpayer info."
     });
 
   } catch (error) {
@@ -115,8 +94,7 @@ app.get('/scrape', async (req, res) => {
     console.error('Scraping error:', error);
     res.status(500).json({ 
       success: false,
-      error: error.message,
-      stack: error.stack
+      error: error.message
     });
   }
 });
