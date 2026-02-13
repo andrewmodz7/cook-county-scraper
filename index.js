@@ -45,75 +45,70 @@ app.get('/scrape', async (req, res) => {
 
     await page.waitForTimeout(2000);
 
-    const inputs = await page.$$('input[type="text"]');
-    console.log(`Found ${inputs.length} text input fields`);
+    // Fill in the PIN using page.evaluate
+    await page.evaluate((segs) => {
+      const inputs = document.querySelectorAll('input[type="text"]');
+      if (inputs.length >= 5) {
+        inputs[0].value = segs.seg1;
+        inputs[1].value = segs.seg2;
+        inputs[2].value = segs.seg3;
+        inputs[3].value = segs.seg4;
+        inputs[4].value = segs.seg5;
+      }
+    }, segments);
 
-    if (inputs.length >= 5) {
-      // Fill in PIN
-      await inputs[0].type(segments.seg1);
-      await inputs[1].type(segments.seg2);
-      await inputs[2].type(segments.seg3);
-      await inputs[3].type(segments.seg4);
-      await inputs[4].type(segments.seg5);
+    console.log('Filled in PIN fields');
 
-      // Click search button and wait for either navigation OR results to load
-      const buttons = await page.$$('button, input[type="submit"], input[type="button"], a');
+    // Click the search button using JavaScript
+    const buttonClicked = await page.evaluate(() => {
+      const buttons = document.querySelectorAll('button, input[type="submit"], input[type="button"], a');
       
-      let clicked = false;
       for (const button of buttons) {
-        const text = await page.evaluate(el => (el.textContent || el.value || '').toLowerCase(), button);
-        if (text.includes('search') || text.includes('submit') || text.includes('find') || text.includes('go')) {
-          console.log(`Clicking button with text: ${text}`);
-          await button.click();
-          clicked = true;
-          break;
+        const text = (button.textContent || button.value || '').toLowerCase();
+        if (text.includes('search') || text.includes('submit') || text.includes('find')) {
+          console.log('Found button:', text);
+          button.click();
+          return true;
         }
       }
+      return false;
+    });
 
-      if (!clicked) {
-        await browser.close();
-        return res.json({
-          success: false,
-          error: "Could not find search button"
-        });
-      }
-
-      // Wait for results to load (either navigation OR dynamic content)
-      // Try both approaches
-      try {
-        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 });
-        console.log("Page navigated to results");
-      } catch (navError) {
-        console.log("No navigation detected, checking for dynamic content");
-        // Wait a bit for AJAX to complete
-        await page.waitForTimeout(5000);
-      }
-
-      // Get the page URL and content
-      const currentUrl = page.url();
-      const pageTitle = await page.title();
-      
-      // Get page content to find taxpayer info
-      const bodyText = await page.evaluate(() => document.body.innerText);
-
+    if (!buttonClicked) {
       await browser.close();
-
-      res.json({
-        success: true,
-        pin: pin,
-        url: currentUrl,
-        pageTitle: pageTitle,
-        bodyText: bodyText.substring(0, 1000), // First 1000 chars to see what's on the page
-        note: "Check bodyText for taxpayer name and tax info"
-      });
-
-    } else {
-      await browser.close();
-      res.json({
+      return res.json({
         success: false,
-        error: `Only found ${inputs.length} input fields`
+        error: "Could not find or click search button"
       });
     }
+
+    console.log('Button clicked');
+
+    // Wait for results (either navigation or dynamic content)
+    try {
+      await Promise.race([
+        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }),
+        page.waitForTimeout(8000)
+      ]);
+    } catch (e) {
+      console.log('Navigation/wait completed');
+    }
+
+    // Get current state
+    const currentUrl = page.url();
+    const pageTitle = await page.title();
+    const bodyText = await page.evaluate(() => document.body.innerText);
+
+    await browser.close();
+
+    res.json({
+      success: true,
+      pin: pin,
+      url: currentUrl,
+      pageTitle: pageTitle,
+      bodyText: bodyText.substring(0, 2000),
+      note: "Check bodyText for taxpayer info. If URL changed, we navigated successfully."
+    });
 
   } catch (error) {
     if (browser) await browser.close();
