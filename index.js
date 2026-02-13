@@ -104,16 +104,3 @@ app.get('/scrape', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Scraper running on port ${PORT}`);
 });
-```
-
----
-
-**This extracts:**
-1. **Taxpayer name** from the "MAILING ADDRESS" section
-2. **2024 tax billed amount**
-3. **Amount owed** (what's available to pay online)
-4. **Status** (Paid in Full vs Unpaid)
-
-**Update on GitHub, wait for Railway to redeploy, then test:**
-```
-https://cook-county-scraper-production.up.railway.app/scrape?pin=16023240110000
