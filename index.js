@@ -45,36 +45,38 @@ app.get('/scrape', async (req, res) => {
 
     await page.waitForTimeout(3000);
 
-    // Fill in the PIN boxes with the correct IDs
+    // Fill in PIN
     await page.type('#pinBox1', segments.seg1);
     await page.type('#pinBox2', segments.seg2);
     await page.type('#pinBox3', segments.seg3);
     await page.type('#pinBox4', segments.seg4);
     await page.type('#pinBox5', segments.seg5);
 
-    console.log('Filled PIN fields');
-
-    // Click the search button
+    // Submit
     await page.click('#ContentPlaceHolder1_PINAddressSearch_btnSearch');
-    
-    console.log('Clicked search button');
-
-    // Wait for navigation to results page
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
 
-    console.log('Navigated to results');
-
-    // Extract data from results page
+    // Extract the data
     const data = await page.evaluate(() => {
-      // Get all the text content
       const bodyText = document.body.innerText;
       
-      // We'll return the full body text to see what's on the page
-      // Then we can identify the correct selectors for taxpayer name, etc.
+      // Extract mailing address (taxpayer name)
+      const mailingMatch = bodyText.match(/MAILING ADDRESS\s+([^\n]+)/);
+      const taxpayerName = mailingMatch ? mailingMatch[1].trim() : 'Not found';
+      
+      // Extract 2024 tax info
+      const tax2024Match = bodyText.match(/2024:\s*\$?([\d,]+\.?\d*)\s*\n\s*Pay Online:\s*\$?([\d,]+\.?\d*)/);
+      const taxBilled = tax2024Match ? tax2024Match[1] : 'Not found';
+      const amountOwed = tax2024Match ? tax2024Match[2] : 'Not found';
+      
+      // Check if paid in full
+      const paidInFull = bodyText.includes('2024:') && bodyText.match(/2024:[^\n]*Paid in Full/);
+      
       return {
-        url: window.location.href,
-        title: document.title,
-        bodyText: bodyText
+        taxpayerName,
+        taxBilled,
+        amountOwed,
+        status: paidInFull ? 'Paid in Full' : (amountOwed !== '0' ? 'Unpaid' : 'Unknown')
       };
     });
 
@@ -83,10 +85,10 @@ app.get('/scrape', async (req, res) => {
     res.json({
       success: true,
       pin: pin,
-      url: data.url,
-      pageTitle: data.title,
-      bodyText: data.bodyText.substring(0, 3000), // First 3000 chars
-      note: "Successfully retrieved results. Check bodyText for taxpayer info."
+      taxpayer: data.taxpayerName,
+      taxBilled2024: data.taxBilled,
+      amountOwed: data.amountOwed,
+      status: data.status
     });
 
   } catch (error) {
@@ -102,3 +104,16 @@ app.get('/scrape', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Scraper running on port ${PORT}`);
 });
+```
+
+---
+
+**This extracts:**
+1. **Taxpayer name** from the "MAILING ADDRESS" section
+2. **2024 tax billed amount**
+3. **Amount owed** (what's available to pay online)
+4. **Status** (Paid in Full vs Unpaid)
+
+**Update on GitHub, wait for Railway to redeploy, then test:**
+```
+https://cook-county-scraper-production.up.railway.app/scrape?pin=16023240110000
