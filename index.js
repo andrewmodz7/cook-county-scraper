@@ -73,6 +73,7 @@ app.get('/scrape', async (req, res) => {
       };
     });
     await browser.close();
+    await new Promise(resolve => setTimeout(resolve, 4000));
     res.json({
       success: true,
       pin: pin,
@@ -83,6 +84,7 @@ app.get('/scrape', async (req, res) => {
     });
   } catch (error) {
     if (browser) await browser.close();
+    await new Promise(resolve => setTimeout(resolve, 4000));
     console.error('Scraping error:', error);
     res.status(500).json({ 
       success: false,
